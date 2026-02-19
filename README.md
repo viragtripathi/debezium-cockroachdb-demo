@@ -208,7 +208,7 @@ CREATE TABLE orders (
 - **Single table per connector**: Each connector instance monitors one table. Multi-table support is planned.
 - **Schema evolution**: Adding/dropping columns after changefeed creation is not yet handled.
 - **CockroachDB insecure mode**: The demo uses `--insecure` for simplicity. For production, use SSL certificates.
-- **Hibernate dialect hint**: The JDBC sink requires `hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect` because CockroachDB is not auto-detected as PostgreSQL-compatible by the Debezium JDBC connector.
+- **Hibernate dialect**: The JDBC sink requires `hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect`. While CockroachDB has a first-class [`CockroachDialect`](https://docs.hibernate.org/orm/6.3/javadocs/org/hibernate/dialect/CockroachDialect.html) in Hibernate 6.x ([CockroachDB + Hibernate docs](https://www.cockroachlabs.com/docs/stable/build-a-java-app-with-cockroachdb-hibernate)), the Debezium JDBC sink's `DatabaseDialectResolver` does not yet have a CockroachDB-specific `DatabaseDialectProvider`. Since `CockroachDialect` extends `Dialect` directly (not `PostgreSQLDialect`), the resolver falls back to `GeneralDatabaseDialect` which lacks upsert support. Using `PostgreSQLDialect` correctly maps to the Debezium `PostgresDatabaseDialect`, which generates the `INSERT ... ON CONFLICT ... DO UPDATE` syntax that CockroachDB supports. Adding a `CockroachDBDatabaseDialectProvider` to the Debezium JDBC sink is a natural follow-up enhancement.
 
 ## Cleanup
 
