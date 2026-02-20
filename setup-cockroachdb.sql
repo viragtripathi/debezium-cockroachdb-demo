@@ -27,9 +27,26 @@ CREATE TABLE IF NOT EXISTS orders (
     updated_at TIMESTAMPTZ DEFAULT current_timestamp()
 );
 
+-- Create customers table (for multi-table changefeed demo)
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name STRING NOT NULL,
+    email STRING UNIQUE NOT NULL,
+    tier STRING DEFAULT 'standard',
+    created_at TIMESTAMPTZ DEFAULT current_timestamp()
+);
+
 -- Grant permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE orders TO demo;
 GRANT CHANGEFEED ON TABLE orders TO demo;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE customers TO demo;
+GRANT CHANGEFEED ON TABLE customers TO demo;
+
+-- Insert sample customers
+INSERT INTO customers (name, email, tier) VALUES
+    ('Alice Johnson', 'alice@example.com', 'gold'),
+    ('Bob Smith', 'bob@example.com', 'standard'),
+    ('Carol Davis', 'carol@example.com', 'platinum');
 
 -- Insert sample data
 INSERT INTO orders (order_number, customer_name, email, amount, status, items, tags, shipping_weight_kg, is_express) VALUES
