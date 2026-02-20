@@ -292,8 +292,10 @@ TGT_COUNT=$(docker exec demo-cockroachdb-target cockroach sql --insecure -d targ
     -e "SELECT count(*) FROM orders_replica" --format=csv 2>/dev/null | tail -1 || echo "0")
 echo "  Source (demodb.orders):           $SRC_COUNT rows"
 echo "  Target (targetdb.orders_replica): $TGT_COUNT rows"
-if [ "$SRC_COUNT" != "$TGT_COUNT" ]; then
-    info "Note: Source has pre-existing rows from before changefeed creation (cursor=now). Only rows inserted/updated/deleted AFTER the connector starts are replicated."
+if [ "$SRC_COUNT" = "$TGT_COUNT" ]; then
+    success "Row counts match: snapshot captured all pre-existing rows!"
+else
+    info "Note: Row count mismatch (source=$SRC_COUNT, target=$TGT_COUNT). The DELETE in demo-operations.sql removes one row from source."
 fi
 
 # ── Step 20: Summary ───────────────────────────────────────────────────────
