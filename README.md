@@ -10,7 +10,7 @@ and the [Debezium JDBC sink connector](https://debezium.io/documentation/referen
 Source CockroachDB (demodb.orders)
        |
        v  CockroachDB enriched changefeed (native CDC)
-Kafka  (intermediate topic: cockroachdb.demodb.public.orders)
+Kafka  (intermediate topic: crdb.demodb.public.orders)
        |
        v  Debezium CockroachDB Source Connector
 Kafka  (output topic: crdb.public.orders)
