@@ -3,7 +3,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONNECTOR_PROJECT="${SCRIPT_DIR}/../debezium-connector-cockroachdb"
+CONNECTOR_VERSION="${CONNECTOR_VERSION:-3.5.0.Final}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
+BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-false}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -51,22 +53,14 @@ wait_for_task_running() {
     return 1
 }
 
-# ── Step 1: Build connector plugin ──────────────────────────────────────────
-header "STEP 1: Build Connector Plugin"
+# ── Step 1: Obtain connector plugin ─────────────────────────────────────────
+header "STEP 1: Obtain Connector Plugin"
 if [ "$SKIP_BUILD" = "true" ] && [ -d "$SCRIPT_DIR/connect-plugins/debezium-connector-cockroachdb" ] \
     && [ -n "$(ls "$SCRIPT_DIR/connect-plugins/debezium-connector-cockroachdb/"*.jar 2>/dev/null)" ]; then
-    success "Using pre-built plugin in connect-plugins/ (SKIP_BUILD=true)"
-else
+    success "Using existing plugin in connect-plugins/ (SKIP_BUILD=true)"
+elif [ "$BUILD_FROM_SOURCE" = "true" ]; then
     if [ ! -d "$CONNECTOR_PROJECT" ]; then
-        echo ""
-        warn "Connector project not found at $CONNECTOR_PROJECT"
-        info "To run without building from source, place the connector jars in connect-plugins/debezium-connector-cockroachdb/"
-        info "  Option 1: Download from a release or CI artifact"
-        info "  Option 2: Clone and build:"
-        echo "    git clone https://github.com/debezium/debezium-connector-cockroachdb.git ../debezium-connector-cockroachdb"
-        echo "    cd ../debezium-connector-cockroachdb && ./mvnw clean package -DskipTests -Passembly"
-        echo "    Then re-run this script."
-        fail "Cannot proceed without connector plugin"
+        fail "BUILD_FROM_SOURCE=true but connector project not found at $CONNECTOR_PROJECT"
     fi
     cd "$CONNECTOR_PROJECT"
     info "Building connector from source..."
@@ -75,13 +69,40 @@ else
     [ -z "$PLUGIN_ZIP" ] && fail "Plugin zip not found after build"
     success "Connector built: $(basename "$PLUGIN_ZIP")"
 
-    # ── Step 2: Prepare plugin directory ────────────────────────────────────
     header "STEP 2: Prepare Plugin Directory"
     cd "$SCRIPT_DIR"
     rm -rf connect-plugins
     mkdir -p connect-plugins
     unzip -q -o "$CONNECTOR_PROJECT/$PLUGIN_ZIP" -d connect-plugins/
     success "Plugin extracted to connect-plugins/"
+else
+    MAVEN_BASE="https://repo1.maven.org/maven2/io/debezium/debezium-connector-cockroachdb"
+    PLUGIN_ZIP_NAME="debezium-connector-cockroachdb-${CONNECTOR_VERSION}-plugin.zip"
+    PLUGIN_URL="${MAVEN_BASE}/${CONNECTOR_VERSION}/${PLUGIN_ZIP_NAME}"
+
+    if [ -d "$SCRIPT_DIR/connect-plugins/debezium-connector-cockroachdb" ] \
+        && [ -n "$(ls "$SCRIPT_DIR/connect-plugins/debezium-connector-cockroachdb/"*.jar 2>/dev/null)" ]; then
+        success "Plugin already present in connect-plugins/"
+        info "To re-download, run: rm -rf connect-plugins && ./run-demo.sh"
+    else
+        info "Downloading connector plugin ${CONNECTOR_VERSION} from Maven Central..."
+        cd "$SCRIPT_DIR"
+        rm -rf connect-plugins
+        mkdir -p connect-plugins
+        if curl -fSL -o "/tmp/${PLUGIN_ZIP_NAME}" "$PLUGIN_URL"; then
+            unzip -q -o "/tmp/${PLUGIN_ZIP_NAME}" -d connect-plugins/
+            rm -f "/tmp/${PLUGIN_ZIP_NAME}"
+            success "Plugin ${CONNECTOR_VERSION} downloaded and extracted to connect-plugins/"
+        else
+            echo ""
+            warn "Download failed. The version ${CONNECTOR_VERSION} may not be published yet."
+            info "Options:"
+            info "  1. Build from source:  BUILD_FROM_SOURCE=true ./run-demo.sh"
+            info "  2. Specify a version:  CONNECTOR_VERSION=3.5.0.Final ./run-demo.sh"
+            info "  3. Place jars manually in connect-plugins/debezium-connector-cockroachdb/ and run with SKIP_BUILD=true"
+            fail "Cannot proceed without connector plugin"
+        fi
+    fi
 fi
 
 # ── Step 3: Start infrastructure ────────────────────────────────────────────

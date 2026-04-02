@@ -31,32 +31,36 @@ to the target with full before/after images and Debezium envelope metadata.
 - Maven 3.9.8+
 - The connector source at `../debezium-connector-cockroachdb`
 
-**To skip the build**, place the connector plugin jars in `connect-plugins/debezium-connector-cockroachdb/` and run:
-```bash
-SKIP_BUILD=true ./run-demo.sh
-```
-
 ## Quick Start
+
+By default, the script downloads the released connector plugin from Maven Central -- no build required:
 
 ```bash
 ./run-demo.sh
 ```
 
+To build from source instead:
+```bash
+BUILD_FROM_SOURCE=true ./run-demo.sh
+```
+
 Override component versions via environment variables:
 ```bash
-COCKROACHDB_VERSION=v26.1.0 DEBEZIUM_VERSION=3.5.0.Beta1 ./run-demo.sh
+CONNECTOR_VERSION=3.5.0.Final COCKROACHDB_VERSION=v25.4.6 DEBEZIUM_VERSION=3.5.0.Final ./run-demo.sh
 ```
 
 | Variable | Default | Description |
 |---|---|---|
+| `CONNECTOR_VERSION` | `3.5.0.Final` | Connector plugin version to download from Maven Central |
 | `COCKROACHDB_VERSION` | `v25.4.6` | CockroachDB image tag |
-| `DEBEZIUM_VERSION` | `3.4.2.Final` | Debezium Connect image tag |
+| `DEBEZIUM_VERSION` | `3.5.0.Final` | Debezium Connect image tag |
 | `CONFLUENT_VERSION` | `7.4.0` | Confluent Platform (Kafka/ZK) image tag |
-| `SKIP_BUILD` | `false` | Skip building from source, use pre-built plugin |
+| `BUILD_FROM_SOURCE` | `false` | Build connector from local source instead of downloading |
+| `SKIP_BUILD` | `false` | Skip download/build, use existing jars in `connect-plugins/` |
 
 The script is fully automated and runs through 22 steps:
 
-1. **Build** the connector plugin from source (or skip with `SKIP_BUILD=true`)
+1. **Obtain** the connector plugin (download from Maven Central, build from source, or use existing)
 2. **Extract** the plugin into `connect-plugins/`
 3. **Start** Docker Compose (source CRDB, target CRDB, Zookeeper, Kafka, Kafka Connect)
 4. **Wait** for source CockroachDB (port 26257)
