@@ -1,0 +1,28 @@
+{
+  "name": "pg-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "sourcedb",
+    "topic.prefix": "pgdemo",
+    "table.include.list": "public.orders_[0-9]+.*,public.customers",
+    "publication.autocreate.mode": "filtered",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_pg2crdb",
+    "snapshot.mode": "initial",
+    "decimal.handling.mode": "string",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "true",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "true",
+    "transforms": "route_partitions",
+    "transforms.route_partitions.type": "io.debezium.transforms.ByLogicalTableRouter",
+    "transforms.route_partitions.topic.regex": "pgdemo\\.public\\.orders_.*",
+    "transforms.route_partitions.topic.replacement": "pgdemo.public.orders",
+    "transforms.route_partitions.key.field.name": "__partition_id",
+    "transforms.route_partitions.key.enforce.uniqueness": "false"
+  }
+}

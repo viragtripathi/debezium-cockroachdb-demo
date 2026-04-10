@@ -1,4 +1,4 @@
-connect-plugins/
+**/connect-plugins/
 *.log
 .DS_Store
 .idea/
