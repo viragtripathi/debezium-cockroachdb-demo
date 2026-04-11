@@ -1,5 +1,5 @@
 -- PostgreSQL partitioned table demo for PG -> CockroachDB replication
--- Demonstrates the OCBC scenario: many partitioned tables merged into a single target table
+-- Demonstrates the common scenario: many partitioned tables merged into a single target table
 
 -- Create the parent orders table, partitioned by range on created_at
 CREATE TABLE IF NOT EXISTS orders (
