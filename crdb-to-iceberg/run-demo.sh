@@ -53,6 +53,32 @@ wait_for_task_running() {
 }
 
 # ── Step 1: Obtain connector plugins ─────────────────────────────────────────
+header "Preflight (host ports)"
+# Reruns legitimately reuse this demo's own containers, so only ports held by anything
+# else fail here. Without this check an occupied port surfaces mid-compose as an opaque
+# runtime error (on podman: "proxy already running").
+DEMO_CONTAINERS="iceberg-demo-kafka iceberg-demo-cockroachdb iceberg-demo-minio iceberg-demo-minio-init iceberg-demo-rest iceberg-demo-connect"
+DEMO_PORTS="29092 26257 8080 9000 9001 8181 8083"
+for port in $DEMO_PORTS; do
+    HOLDER=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | awk -v p=":${port}->" 'index($0, p) { print $1; exit }' || true)
+    if [ -n "$HOLDER" ]; then
+        case " $DEMO_CONTAINERS " in
+            *" $HOLDER "*) continue ;;
+            *) fail "Host port ${port} is held by container '${HOLDER}', which is not part of this demo. Stop it first: docker stop ${HOLDER}" ;;
+        esac
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        LISTENER=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (pid " $2 ")"}' || true)
+        if [ -n "$LISTENER" ]; then
+            case "$LISTENER" in
+                gvproxy*|vpnkit*|com.docke*) fail "Host port ${port} is held by the container runtime but not by this demo's containers; another compose project or container is using it (check 'docker ps')." ;;
+                *) fail "Host port ${port} is in use by ${LISTENER}. Free it and rerun." ;;
+            esac
+        fi
+    fi
+done
+success "Required host ports are available: $DEMO_PORTS"
+
 header "STEP 1: Obtain Connector Plugins"
 
 CRDB_PLUGIN_DIR="$SCRIPT_DIR/connect-plugins/debezium-connector-cockroachdb"
@@ -97,6 +123,7 @@ fi
 
 # ── Step 2: Start the stack ──────────────────────────────────────────────────
 header "STEP 2: Start Containers"
+docker compose down -v --remove-orphans 2>/dev/null || true
 docker-compose up -d 2>/dev/null || docker compose up -d
 success "Containers starting..."
 

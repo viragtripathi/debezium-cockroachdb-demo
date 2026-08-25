@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMPTZ DEFAULT current_timestamp()
 );
 
+-- Reset to the exact seed rows on every run so reruns against a warm stack are
+-- deterministic: leftover rows from a previous run stream through the changefeed as
+-- deletes and the Oracle target converges to the same final state every time.
+-- (DELETE, not TRUNCATE: changefeeds do not emit events for TRUNCATE.)
+DELETE FROM orders;
+
 INSERT INTO orders (order_number, customer_name, amount, status) VALUES
     ('ORD-1001', 'Alice Johnson', 129.99, 'confirmed'),
     ('ORD-1002', 'Bob Smith',     249.50, 'pending'),

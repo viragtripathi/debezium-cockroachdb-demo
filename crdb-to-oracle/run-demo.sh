@@ -75,6 +75,32 @@ else
     fi
 fi
 
+header "Preflight (host ports)"
+# Reruns legitimately reuse this demo's own containers, so only ports held by anything
+# else fail here. Without this check an occupied port surfaces mid-compose as an opaque
+# runtime error (on podman: "proxy already running").
+DEMO_CONTAINERS="crdb2ora-kafka oracle19c-demo crdb2ora-cockroachdb crdb2ora-connect"
+DEMO_PORTS="29092 1521 26257 8080 8083"
+for port in $DEMO_PORTS; do
+    HOLDER=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | awk -v p=":${port}->" 'index($0, p) { print $1; exit }' || true)
+    if [ -n "$HOLDER" ]; then
+        case " $DEMO_CONTAINERS " in
+            *" $HOLDER "*) continue ;;
+            *) fail "Host port ${port} is held by container '${HOLDER}', which is not part of this demo. Stop it first: docker stop ${HOLDER}" ;;
+        esac
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        LISTENER=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (pid " $2 ")"}' || true)
+        if [ -n "$LISTENER" ]; then
+            case "$LISTENER" in
+                gvproxy*|vpnkit*|com.docke*) fail "Host port ${port} is held by the container runtime but not by this demo's containers; another compose project or container is using it (check 'docker ps')." ;;
+                *) fail "Host port ${port} is in use by ${LISTENER}. Free it and rerun." ;;
+            esac
+        fi
+    fi
+done
+success "Required host ports are available: $DEMO_PORTS"
+
 header "STEP 1: Start Containers"
 info "Oracle image: $ORACLE_IMAGE"
 docker-compose up -d 2>/dev/null || docker compose up -d
@@ -139,20 +165,28 @@ UPDATE orders SET status = 'shipped' WHERE order_number = 'ORD-1002';
 DELETE FROM orders WHERE order_number = 'ORD-1003';" >/dev/null
 success "DML executed on CockroachDB: 1 insert, 1 update, 1 delete"
 
-info "Waiting 45s for the changefeed and sink delivery..."
-sleep 45
-
 header "STEP 5: Verify the Data in Oracle"
-RESULT=$(docker exec -i oracle19c-demo bash -c 'sqlplus -S debezium/dbz@//localhost:1521/ORCLPDB1 <<SQL
+# Poll instead of a fixed sleep: on a rerun the pipeline also has to drain the
+# setup-phase reset before the DML lands.
+info "Waiting for the changefeed and sink delivery (polling for the expected final state)..."
+RESULT=""
+STATUS=""
+for i in $(seq 1 30); do
+    RESULT=$(docker exec -i oracle19c-demo bash -c 'sqlplus -S debezium/dbz@//localhost:1521/ORCLPDB1 <<SQL
 SET HEADING OFF FEEDBACK OFF
 SELECT COUNT(*) FROM orders;
 SQL' 2>/dev/null | tr -d "[:space:]")
-info "orders rows in Oracle: $RESULT (expected 3: ORD-1001, ORD-1002 updated, ORD-LIVE-001; ORD-1003 deleted)"
-[ "$RESULT" = "3" ] || fail "Expected 3 rows in Oracle, found '$RESULT'"
-STATUS=$(docker exec -i oracle19c-demo bash -c 'sqlplus -S debezium/dbz@//localhost:1521/ORCLPDB1 <<SQL
+    STATUS=$(docker exec -i oracle19c-demo bash -c 'sqlplus -S debezium/dbz@//localhost:1521/ORCLPDB1 <<SQL
 SET HEADING OFF FEEDBACK OFF
 SELECT TO_CHAR(status) FROM orders WHERE TO_CHAR(order_number) = '"'"'ORD-1002'"'"';
 SQL' 2>/dev/null | tr -d "[:space:]")
+    if [ "$RESULT" = "3" ] && [ "$STATUS" = "shipped" ]; then break; fi
+    echo -n "."
+    sleep 5
+done
+echo ""
+info "orders rows in Oracle: $RESULT (expected 3: ORD-1001, ORD-1002 updated, ORD-LIVE-001; ORD-1003 deleted)"
+[ "$RESULT" = "3" ] || fail "Expected 3 rows in Oracle, found '$RESULT'"
 [ "$STATUS" = "shipped" ] || fail "Expected ORD-1002 status=shipped in Oracle, found '$STATUS'"
 success "Round trip verified: snapshot, insert, update, and delete all landed in Oracle"
 

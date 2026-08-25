@@ -44,6 +44,32 @@ wait_for_task_running() {
     return 1
 }
 
+header "STEP 0: Preflight (host ports)"
+# Reruns legitimately reuse this demo's own containers, so only ports held by anything
+# else fail here. Without this check an occupied port surfaces mid-compose as an opaque
+# runtime error (on podman: "proxy already running").
+DEMO_CONTAINERS="ora2crdb-kafka oracle19c-demo ora2crdb-cockroachdb ora2crdb-connect"
+DEMO_PORTS="1521 8080 8083 26257 29092"
+for port in $DEMO_PORTS; do
+    HOLDER=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | awk -v p=":${port}->" 'index($0, p) { print $1; exit }' || true)
+    if [ -n "$HOLDER" ]; then
+        case " $DEMO_CONTAINERS " in
+            *" $HOLDER "*) continue ;;
+            *) fail "Host port ${port} is held by container '${HOLDER}', which is not part of this demo. Stop it first: docker stop ${HOLDER}" ;;
+        esac
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        LISTENER=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (pid " $2 ")"}' || true)
+        if [ -n "$LISTENER" ]; then
+            case "$LISTENER" in
+                gvproxy*|vpnkit*|com.docke*) fail "Host port ${port} is held by the container runtime but not by this demo's containers; another compose project or container is using it (check 'docker ps')." ;;
+                *) fail "Host port ${port} is in use by ${LISTENER}. Free it and rerun." ;;
+            esac
+        fi
+    fi
+done
+success "Required host ports are available: $DEMO_PORTS"
+
 header "STEP 1: Start Containers"
 info "Oracle image: $ORACLE_IMAGE"
 docker-compose up -d 2>/dev/null || docker compose up -d
@@ -105,16 +131,24 @@ COMMIT;
 SQL' >/dev/null
 success "DML executed on Oracle: 1 insert, 1 update, 1 delete"
 
-info "Waiting 60s for LogMiner capture and sink delivery..."
-sleep 60
-
 header "STEP 6: Verify the Data in CockroachDB"
-ROWS=$(docker exec ora2crdb-cockroachdb cockroach sql --insecure -d targetdb --format=csv \
-    -e "SELECT count(*) FROM customers;" 2>/dev/null | tail -1)
+# Poll instead of a fixed sleep: LogMiner capture latency varies, and on a rerun the
+# pipeline also has to drain the setup-phase reset before the DML lands.
+info "Waiting for LogMiner capture and sink delivery (polling for the expected final state)..."
+ROWS=""
+TIER=""
+for i in $(seq 1 40); do
+    ROWS=$(docker exec ora2crdb-cockroachdb cockroach sql --insecure -d targetdb --format=csv \
+        -e "SELECT count(*) FROM customers;" 2>/dev/null | tail -1)
+    TIER=$(docker exec ora2crdb-cockroachdb cockroach sql --insecure -d targetdb --format=csv \
+        -e "SELECT tier FROM customers WHERE name = 'Bob Smith';" 2>/dev/null | tail -1)
+    if [ "$ROWS" = "3" ] && [ "$TIER" = "platinum" ]; then break; fi
+    echo -n "."
+    sleep 5
+done
+echo ""
 info "customers rows in CockroachDB: $ROWS (expected 3: Alice, Bob updated, Dave; Carol deleted)"
 [ "$ROWS" = "3" ] || fail "Expected 3 rows in CockroachDB, found $ROWS"
-TIER=$(docker exec ora2crdb-cockroachdb cockroach sql --insecure -d targetdb --format=csv \
-    -e "SELECT tier FROM customers WHERE name = 'Bob Smith';" 2>/dev/null | tail -1)
 [ "$TIER" = "platinum" ] || fail "Expected Bob Smith tier=platinum, found '$TIER'"
 success "Round trip verified: snapshot, insert, update, and delete all landed in CockroachDB"
 docker exec ora2crdb-cockroachdb cockroach sql --insecure -d targetdb \

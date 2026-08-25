@@ -87,17 +87,13 @@ CREATE TABLE debezium.customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE debezium.customers ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
-DECLARE
-    n NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO n FROM debezium.customers;
-    IF n = 0 THEN
-        INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Alice Johnson'"'"', '"'"'alice@example.com'"'"', '"'"'gold'"'"', 1250.50);
-        INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Bob Smith'"'"', '"'"'bob@example.com'"'"', '"'"'standard'"'"', 310.00);
-        INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Carol Davis'"'"', '"'"'carol@example.com'"'"', '"'"'platinum'"'"', 9875.25);
-        COMMIT;
-    END IF;
-END;
-/
+REM Reset to the exact seed rows on every run so reruns against a warm Oracle are
+REM deterministic: leftover rows from a previous run stream through the pipeline as
+REM deletes and the target converges to the same final state every time.
+DELETE FROM debezium.customers;
+INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Alice Johnson'"'"', '"'"'alice@example.com'"'"', '"'"'gold'"'"', 1250.50);
+INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Bob Smith'"'"', '"'"'bob@example.com'"'"', '"'"'standard'"'"', 310.00);
+INSERT INTO debezium.customers (name, email, tier, balance) VALUES ('"'"'Carol Davis'"'"', '"'"'carol@example.com'"'"', '"'"'platinum'"'"', 9875.25);
+COMMIT;
 SQL'
 echo "[setup-oracle] Done"
