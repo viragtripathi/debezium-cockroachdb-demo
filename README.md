@@ -45,5 +45,10 @@ Migrating into CockroachDB from other databases via Debezium CDC.
 
 - Docker and Docker Compose (or Podman)
 
+The demos download the connector plugins from Maven Central automatically. For your own
+Kafka Connect deployments, both plugins are also on Confluent Hub:
+[debezium-connector-cockroachdb](https://www.confluent.io/hub/cockroachdb/debezium-connector-cockroachdb)
+and [debezium-connector-jdbc](https://www.confluent.io/hub/cockroachdb/debezium-connector-jdbc).
+
 Each demo README documents its own version knobs (`CONNECTOR_VERSION`,
 `DEBEZIUM_VERSION`, `COCKROACHDB_VERSION`, and friends) and any demo-specific options.
